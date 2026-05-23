@@ -594,7 +594,7 @@ FLOWERS.forEach(function(f,fi){
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // MESSAGES — Supabase-backed, with live fallback
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-var DB = FALLBACK.slice(); // start with fallback; replaced on load
+var DB = []; // stays empty until Supabase responds; fallback only on network failure
 var bWrap = document.getElementById('bubbles-wrap');
 var bEls  = new Array(SLOTS.length).fill(null);
 var bPhys = SLOTS.map(function(){
@@ -653,7 +653,9 @@ function buildBubble(slotIdx, msgObj){
 function renderSlot(slotIdx){
   var old = bEls[slotIdx];
   if(old){ old.style.opacity='0'; old.style.transform='scale(0.88)'; setTimeout(function(){if(old.parentNode)old.remove();},700); }
-  var msgObj = DB[slotIdx % Math.max(DB.length,1)];
+  // If DB is empty after a delete, show nothing — don't recycle fallback
+  if(DB.length === 0){ bEls[slotIdx]=null; return; }
+  var msgObj = DB[slotIdx % DB.length];
   bEls[slotIdx] = buildBubble(slotIdx, msgObj);
 }
 
@@ -680,10 +682,13 @@ function initBubbles(){
 async function loadMessages(){
   try{
     var res = await sb.from('messages').select('id,sender_name,message_content,created_at').order('created_at',{ascending:false}).limit(20);
-    if(res.data && res.data.length > 0){
-      DB = res.data;
-    }
-  } catch(e){ /* keep fallback */ }
+    if(res.error) throw res.error;
+    // Always trust Supabase result — empty array = user cleared everything, don't re-show fallback
+    DB = res.data || [];
+  } catch(e){
+    // Only use built-in fallback if Supabase is truly unreachable
+    DB = FALLBACK.slice();
+  }
   initBubbles();
 }
 
