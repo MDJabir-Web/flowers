@@ -36,7 +36,7 @@ canvas.bg{position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none
   color:rgba(255,160,185,0.3);margin-top:5px;letter-spacing:1.5px}
 
 /* ── Garden ───────────────────────────────────────────────────────────── */
-.garden{position:relative;width:100%;height:540px;margin-top:2px}
+.garden{position:relative;width:100%;height:560px;margin-top:2px}
 .garden svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
 .bubbles-wrap{position:absolute;inset:0;pointer-events:none;z-index:12}
 
@@ -173,7 +173,7 @@ canvas.bg{position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none
   </div>
 
   <div class="garden">
-    <svg id="svg" viewBox="0 0 980 540" preserveAspectRatio="xMidYMax meet">
+    <svg id="svg" viewBox="0 0 980 560" preserveAspectRatio="xMidYMax meet">
       <defs>
         <filter id="fglow" x="-80%" y="-80%" width="260%" height="260%">
           <feGaussianBlur stdDeviation="11" result="b"/>
@@ -194,7 +194,7 @@ canvas.bg{position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none
         </radialGradient>
       </defs>
       <ellipse cx="490" cy="0"   rx="520" ry="280" fill="url(#moonwash)"/>
-      <ellipse cx="490" cy="528" rx="510" ry="28"  fill="url(#gg)"/>
+      <ellipse cx="490" cy="544" rx="510" ry="28"  fill="url(#gg)"/>
       <g id="g-grass"></g>
       <g id="g-flowers"></g>
     </svg>
@@ -381,42 +381,87 @@ var NS='http://www.w3.org/2000/svg';
 function se(t){return document.createElementNS(NS,t);}
 function sa(e,o){for(var k in o)e.setAttribute(k,o[k]);return e;}
 
-function petalD(cx,cy,rx,ry,deg,droop,curl,asymm){
-  var r=deg*Math.PI/180,cos=Math.cos(r),sin=Math.sin(r);
-  var tx=cx+ry*cos+droop*sin*.16,ty=cy+ry*sin+droop*cos*.16;
-  var px=-sin*rx,py=cos*rx;
-  var la=1+(asymm||0),ra=1-(asymm||0)*.4;
+// ── Maths helpers ───────────────────────────────────────────────────────────
+function rad(d){return d*Math.PI/180;}
+function ptOnBez(x0,y0,cx1,cy1,cx2,cy2,x1,y1,t){
+  var m=1-t;
+  return {
+    x:m*m*m*x0+3*m*m*t*cx1+3*m*t*t*cx2+t*t*t*x1,
+    y:m*m*m*y0+3*m*m*t*cy1+3*m*t*t*cy2+t*t*t*y1
+  };
+}
+function bezLen(x0,y0,cx1,cy1,cx2,cy2,x1,y1,steps){
+  steps=steps||60;
+  var len=0,px=x0,py=y0;
+  for(var i=1;i<=steps;i++){
+    var p=ptOnBez(x0,y0,cx1,cy1,cx2,cy2,x1,y1,i/steps);
+    var dx=p.x-px,dy=p.y-py;
+    len+=Math.sqrt(dx*dx+dy*dy);
+    px=p.x;py=p.y;
+  }
+  return Math.ceil(len)+2;
+}
+
+// ── Petal shape ─────────────────────────────────────────────────────────────
+// Creates a realistic pointed-oval petal using two bezier arcs.
+// cx,cy = center attachment, rx = half-width, ry = length, angle = direction
+// pinch controls how cupped/pointed the tip is (0=round, 1=pointed)
+function petalPath(cx,cy,rx,ry,angleDeg,pinch,twistL,twistR){
+  var r=rad(angleDeg);
+  var cos=Math.cos(r),sin=Math.sin(r);
+  // tip point
+  var tx=cx+ry*cos, ty=cy+ry*sin;
+  // perpendicular (width direction)
+  var px=-sin*rx, py=cos*rx;
+  // control points — left arc bows outward, right arc slightly less
+  var cp1Lx=cx+px*(1+twistL)+cos*ry*.35, cp1Ly=cy+py*(1+twistL)+sin*ry*.35;
+  var cp2Lx=tx+px*(pinch||.5),           cp2Ly=ty+py*(pinch||.5);
+  var cp1Rx=cx-px*(1+twistR)+cos*ry*.35, cp1Ry=cy-py*(1+twistR)+sin*ry*.35;
+  var cp2Rx=tx-px*(pinch||.5),           cp2Ry=ty-py*(pinch||.5);
   return ['M',cx,cy,
-    'C',cx+px*la*.92+cos*ry*.22+(curl||0),cy+py*la*.92+sin*ry*.22,
-       tx+px*.58,ty+py*.58,tx,ty,
-    'C',tx-px*ra*.38,ty-py*ra*.38,
-       cx-px*.8+cos*ry*.22,cy-py*.8+sin*ry*.22,
+    'C',cp1Lx,cp1Ly,cp2Lx,cp2Ly,tx,ty,
+    'C',cp2Rx,cp2Ry,cp1Rx,cp1Ry,cx,cy].join(' ');
+}
+
+// ── Rose petal — cupped/rolled edge ─────────────────────────────────────────
+function rosePetal(cx,cy,rx,ry,angleDeg,rollIn){
+  var r=rad(angleDeg);
+  var cos=Math.cos(r),sin=Math.sin(r);
+  var tx=cx+ry*cos, ty=cy+ry*sin;
+  var px=-sin*rx,py=cos*rx;
+  var roll=rollIn||.3;
+  // cup inward — left edge goes further, right pulls back creating cup effect
+  return ['M',cx,cy,
+    'C',cx+px*1.1+cos*ry*.28,cy+py*1.1+sin*ry*.28,
+       tx+px*roll,ty+py*roll, tx,ty,
+    'C',tx-px*(roll*.6),ty-py*(roll*.6),
+       cx-px*.65+cos*ry*.42,cy-py*.65+sin*ry*.42,
        cx,cy].join(' ');
 }
-function rosePetalD(cx,cy,rx,ry,deg,droop){
-  var r=deg*Math.PI/180,cos=Math.cos(r),sin=Math.sin(r);
-  var tx=cx+ry*cos+droop*sin*.14,ty=cy+ry*sin+droop*cos*.14;
-  var px=-sin*rx,py=cos*rx;
-  var mx=cx+cos*ry*.42+Math.cos(r+.3)*rx*.3,my=cy+sin*ry*.42+Math.sin(r+.3)*rx*.3;
+
+// ── Leaf shape ───────────────────────────────────────────────────────────────
+function leafPath(cx,cy,angleDeg,len,wid,tipSharp){
+  var r=rad(angleDeg);
+  var cos=Math.cos(r),sin=Math.sin(r);
+  var tx=cx+cos*len, ty=cy+sin*len;
+  var px=-sin*wid,py=cos*wid;
+  var ts=tipSharp||.55;
   return ['M',cx,cy,
-    'C',cx+px*.85,cy+py*.85,tx+px*.65,ty+py*.65,tx,ty,
-    'C',tx-px*.5,ty-py*.5,mx,my,cx,cy].join(' ');
+    'C',cx+px*1.3+cos*len*.32,cy+py*1.3+sin*len*.32,
+       tx+px*ts,ty+py*ts, tx,ty,
+    'C',tx-px*(ts*.7),ty-py*(ts*.7),
+       cx-px*.9+cos*len*.38,cy-py*.9+sin*len*.38,
+       cx,cy].join(' ');
 }
-function leafD(cx,cy,deg,len,w){
-  var r=deg*Math.PI/180,cos=Math.cos(r),sin=Math.sin(r);
-  var tx=cx+cos*len,ty=cy+sin*len;
-  var px=-sin*w,py=cos*w;
-  return ['M',cx,cy,
-    'C',cx+cos*len*.42+px*1.15,cy+sin*len*.42+py*1.15,tx+px*.7,ty+py*.7,tx,ty,
-    'C',tx-px*.7,ty-py*.7,cx+cos*len*.42-px*1.15,cy+sin*len*.42-py*1.15,cx,cy].join(' ');
-}
-function svgHrtD(cx,cy,sz){
-  var s=sz*.52;
-  return ['M',cx,cy+s*.28,
+
+// ── SVG heart path ───────────────────────────────────────────────────────────
+function heartPath(cx,cy,sz){
+  var s=sz*.5;
+  return ['M',cx,cy+s*.32,
     'C',cx,cy-s*.55,cx-s*1.35,cy-s*.55,cx-s*1.35,cy,
-    'C',cx-s*1.35,cy+s*.65,cx,cy+s*1.25,cx,cy+s*1.75,
-    'C',cx,cy+s*1.25,cx+s*1.35,cy+s*.65,cx+s*1.35,cy,
-    'C',cx+s*1.35,cy-s*.55,cx,cy-s*.55,cx,cy+s*.28,'Z'].join(' ');
+    'C',cx-s*1.35,cy+s*.7,cx,cy+s*1.3,cx,cy+s*1.82,
+    'C',cx,cy+s*1.3,cx+s*1.35,cy+s*.7,cx+s*1.35,cy,
+    'C',cx+s*1.35,cy-s*.55,cx,cy-s*.55,cx,cy+s*.32,'Z'].join(' ');
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -424,170 +469,392 @@ function svgHrtD(cx,cy,sz){
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 (function(){
   var gl=document.getElementById('g-grass'),rng=mkRng(73);
-  for(var i=0;i<105;i++){
-    var gx=(i/104)*980+rng()*18-9,gh=10+rng()*38,gw=.9+rng()*2.6,lean=(rng()-.5)*32;
-    var isRed=rng()>.7,h=isRed?(335+rng()*25):(112+rng()*22);
-    var sat=isRed?(45+rng()*30):(32+rng()*22),lum=10+rng()*14;
-    var cx1=gx+lean*.33,cy1=518-gh*.36,cx2=gx+lean*.7,cy2=518-gh*.7;
+  for(var i=0;i<120;i++){
+    var gx=(i/119)*980+rng()*16-8;
+    var gh=14+rng()*44,gw=.8+rng()*2.8,lean=(rng()-.5)*35;
+    var isRed=rng()>.72,h=isRed?(332+rng()*22):(110+rng()*24);
+    var sat=isRed?(40+rng()*28):(30+rng()*25),lum=9+rng()*16;
+    var cx1=gx+lean*.32,cy1=522-gh*.35,cx2=gx+lean*.72,cy2=522-gh*.72;
     var p=se('path');
-    sa(p,{d:'M '+gx+' 522 C '+cx1+' '+cy1+','+cx2+' '+cy2+','+(gx+lean)+' '+(522-gh),
+    sa(p,{d:'M '+gx+' 528 C '+cx1+' '+cy1+','+cx2+' '+cy2+','+(gx+lean)+' '+(528-gh),
       fill:'none',stroke:'hsl('+h+','+sat+'%,'+lum+'%)',
-      'stroke-width':gw,'stroke-linecap':'round',opacity:(.4+rng()*.6)});
+      'stroke-width':gw,'stroke-linecap':'round',opacity:(.38+rng()*.62)});
     gl.appendChild(p);
   }
-  [88,200,318,448,568,672,778,882].forEach(function(bx){
-    var g=se('g');
-    var st=se('path');sa(st,{d:'M '+bx+' 522 L '+bx+' 508',fill:'none',stroke:'hsl(130,40%,18%)','stroke-width':'1.5'});g.appendChild(st);
-    var sp=se('circle');sa(sp,{cx:bx,cy:507,r:4,fill:'rgba(180,40,70,0.38)',filter:'url(#fsoft)'});g.appendChild(sp);
-    var sl=se('path');sa(sl,{d:'M '+bx+' 514 Q '+(bx+10)+' 510 '+(bx+16)+' 514',fill:'none',stroke:'hsl(128,38%,20%)','stroke-width':'1.2','stroke-linecap':'round'});g.appendChild(sl);
-    gl.appendChild(g);
+  // small ground buds between flowers
+  [60,145,270,385,510,625,730,840,935].forEach(function(bx,bi){
+    var by2=524+Math.sin(bi)*1.5;
+    var g2=se('g');
+    var st2=se('path');sa(st2,{d:'M '+bx+' '+by2+' L '+bx+' '+(by2-16),fill:'none',stroke:'hsl(128,38%,16%)','stroke-width':1.8});g2.appendChild(st2);
+    // tiny bud
+    var bud=se('ellipse');sa(bud,{cx:bx,cy:by2-17,rx:3.5,ry:5,fill:'rgba(160,30,65,0.42)',filter:'url(#fsoft)'});g2.appendChild(bud);
+    // sepal
+    var sep=se('path');sa(sep,{d:'M '+bx+' '+(by2-14)+' Q '+(bx+7)+' '+(by2-19)+' '+(bx+10)+' '+(by2-14),fill:'none',stroke:'hsl(130,35%,18%)','stroke-width':1.3,'stroke-linecap':'round'});g2.appendChild(sep);
+    gl.appendChild(g2);
   });
+})();
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// GLOBAL ANIMATION KEYFRAMES
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+(function(){
+  var ks=document.createElement('style');
+  ks.textContent=
+    // stem draws itself upward via stroke-dashoffset
+    '@keyframes stemDraw{from{stroke-dashoffset:var(--sl,900)}to{stroke-dashoffset:0}}'+
+    // leaves unfurl from 0 at attachment point
+    '@keyframes leafOpen{0%{transform:scale(0) rotate(-20deg);opacity:0}65%{transform:scale(1.06) rotate(2deg);opacity:.88}100%{transform:scale(1) rotate(0deg);opacity:.93}}'+
+    // each petal opens individually — rotate from furled
+    '@keyframes petalOpen{0%{transform:scale(0) rotate(-25deg);opacity:0}55%{transform:scale(1.1) rotate(4deg);opacity:1}100%{transform:scale(1) rotate(0deg);opacity:1}}'+
+    // head scales in once petals start
+    '@keyframes headPop{0%{transform:scale(0);opacity:0}60%{transform:scale(1.06);opacity:1}100%{transform:scale(1);opacity:1}}'+
+    // heart floats above flower
+    '@keyframes heartPulse{0%,100%{transform:translateY(-32px) scale(1)}50%{transform:translateY(-46px) scale(1.16)}}'+
+    // idle sway after grow finishes
+    '@keyframes sway{0%,100%{transform:rotate(0deg)}28%{transform:rotate(var(--sa,5deg))}72%{transform:rotate(calc(-1*var(--sa,5deg)))}}';
+  document.head.appendChild(ks);
 })();
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // FLOWERS
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Each flower: x=base x, by=ground y, h=stem height, lean=tip x offset
+// pN=petal count, type='daisy'|'rose'|'tulip'
+// pc=petal main, pc2=petal dark, pc3=petal light, cc=center color
+// lh=leaf hue, sc=size scale, sd=stagger delay (seconds)
 var FLOWERS=[
-  {x:88, by:522,h:195,lean:-22,pN:6, type:'round',pc:'#f9a8d4',pc2:'#be185d',cc:'#fef08a',lh:134,sc:.88, sd:0   },
-  {x:200,by:524,h:262,lean:15, pN:8, type:'rose', pc:'#fca5a5',pc2:'#b91c1c',cc:'#fde68a',lh:124,sc:1.1, sd:.7  },
-  {x:318,by:521,h:228,lean:-10,pN:7, type:'round',pc:'#f472b6',pc2:'#9d174d',cc:'#fef9c3',lh:130,sc:.96, sd:1.2 },
-  {x:448,by:526,h:280,lean:20, pN:10,type:'rose', pc:'#e879f9',pc2:'#7e22ce',cc:'#fef08a',lh:128,sc:1.16,sd:.4  },
-  {x:568,by:520,h:214,lean:-17,pN:6, type:'round',pc:'#fda4af',pc2:'#be123c',cc:'#fde68a',lh:122,sc:.93, sd:1.0 },
-  {x:672,by:524,h:252,lean:12, pN:8, type:'rose', pc:'#c084fc',pc2:'#6d28d9',cc:'#fef9c3',lh:118,sc:1.04,sd:1.5 },
-  {x:778,by:521,h:222,lean:-18,pN:7, type:'round',pc:'#f9a8d4',pc2:'#831843',cc:'#fef08a',lh:133,sc:.91, sd:.8  },
-  {x:882,by:522,h:238,lean:8,  pN:8, type:'round',pc:'#fca5a5',pc2:'#991b1b',cc:'#fde68a',lh:126,sc:.99, sd:1.3 },
+  {x:90,  by:528,h:220,lean:-28,pN:8, type:'daisy', pc:'#f9a8d4',pc2:'#be185d',pc3:'#fce7f3',cc:'#fef08a',lh:134,sc:1.0,  sd:0   },
+  {x:210, by:528,h:295,lean:18, pN:5, type:'tulip', pc:'#fca5a5',pc2:'#b91c1c',pc3:'#fee2e2',cc:'#fde68a',lh:124,sc:1.15, sd:.55 },
+  {x:335, by:528,h:260,lean:-12,pN:12,type:'daisy', pc:'#f472b6',pc2:'#9d174d',pc3:'#fdf2f8',cc:'#fef9c3',lh:130,sc:1.05, sd:1.1 },
+  {x:460, by:528,h:310,lean:25, pN:6, type:'rose',  pc:'#e879f9',pc2:'#7e22ce',pc3:'#fae8ff',cc:'#fde68a',lh:128,sc:1.25, sd:.35 },
+  {x:580, by:528,h:240,lean:-20,pN:8, type:'daisy', pc:'#fda4af',pc2:'#be123c',pc3:'#fff1f2',cc:'#fed7aa',lh:122,sc:1.0,  sd:.9  },
+  {x:698, by:528,h:280,lean:14, pN:5, type:'tulip', pc:'#c084fc',pc2:'#6d28d9',pc3:'#ede9fe',cc:'#fef9c3',lh:118,sc:1.1,  sd:1.4 },
+  {x:810, by:528,h:250,lean:-22,pN:10,type:'daisy', pc:'#f9a8d4',pc2:'#831843',pc3:'#fdf2f8',cc:'#fde68a',lh:133,sc:1.02, sd:.7  },
+  {x:920, by:528,h:268,lean:10, pN:6, type:'rose',  pc:'#fca5a5',pc2:'#991b1b',pc3:'#fff1f2',cc:'#fde68a',lh:126,sc:1.08, sd:1.2 },
 ];
 
-var defs=document.querySelector('#svg defs');
+var svgDefs=document.querySelector('#svg defs');
 
 FLOWERS.forEach(function(f,fi){
-  function rg(id,cx,cy,stops){
-    var g=se('radialGradient');g.id=id;sa(g,{cx:cx,cy:cy});
-    stops.forEach(function(s){var st=se('stop');st.setAttribute('offset',s[0]);st.setAttribute('stop-color',s[1]);if(s[2])st.setAttribute('stop-opacity',s[2]);g.appendChild(st);});
-    defs.appendChild(g);
+  var S=f.sc; // size multiplier
+
+  // ── Gradients ───────────────────────────────────────────────────────────
+  function mkRG(id,attrs,stops){
+    var g=se('radialGradient');g.id=id;
+    for(var k in attrs)g.setAttribute(k,attrs[k]);
+    stops.forEach(function(s){
+      var st=se('stop');st.setAttribute('offset',s[0]);st.setAttribute('stop-color',s[1]);
+      if(s[2]!=null)st.setAttribute('stop-opacity',s[2]);svgDefs.appendChild(st);g.appendChild(st);
+    });
+    svgDefs.appendChild(g);
   }
-  function lg(id,stops){
-    var g=se('linearGradient');g.id=id;sa(g,{x1:'0',y1:'0',x2:'1',y2:'1'});
-    stops.forEach(function(s){var st=se('stop');st.setAttribute('offset',s[0]);st.setAttribute('stop-color',s[1]);g.appendChild(st);});
-    defs.appendChild(g);
+  function mkLG(id,x1,y1,x2,y2,stops){
+    var g=se('linearGradient');g.id=id;
+    sa(g,{x1:x1,y1:y1,x2:x2,y2:y2,gradientUnits:'objectBoundingBox'});
+    stops.forEach(function(s){
+      var st=se('stop');st.setAttribute('offset',s[0]);st.setAttribute('stop-color',s[1]);g.appendChild(st);
+    });
+    svgDefs.appendChild(g);
   }
-  rg('pg'+fi, '22%','22%',[['0%','#fff0f5'],['35%',f.pc],['100%',f.pc2]]);
-  rg('pg2'+fi,'72%','72%',[['0%',f.pc2],['100%',f.pc]]);
-  rg('pg3'+fi,'50%','50%',[['0%','rgba(255,255,255,0.18)'],['100%','transparent']]);
-  rg('cg'+fi, '35%','30%',[['0%','#fffce0'],['50%',f.cc],['100%','#7c2d12']]);
-  lg('sg'+fi,[['0%','hsl('+f.lh+',62%,48%)'],['45%','hsl('+f.lh+',52%,30%)'],['100%','hsl('+f.lh+',40%,14%)']]);
-  lg('lg'+fi,[['0%','hsl('+f.lh+',58%,52%)'],['100%','hsl('+f.lh+',42%,17%)']]);
 
-  var tipX=f.x+f.lean,tipY=f.by-f.h,droop=f.lean*.26;
-  var mid=(f.by+tipY)/2;
-  var cp1x=f.x+f.lean*.2,cp1y=mid+38,cp2x=f.x+f.lean*.65,cp2y=mid-28;
-  var sD='M '+f.x+' '+f.by+' C '+cp1x+' '+cp1y+','+cp2x+' '+cp2y+','+tipX+' '+tipY;
-  var dur=3.5+f.sd*.6,amp=4+Math.abs(f.lean)*.13;
+  // Petal gradient: light at base, saturated at mid, dark at tip
+  mkRG('pg'+fi,{cx:'30%',cy:'25%',r:'75%'},[
+    ['0%',f.pc3],['40%',f.pc],['100%',f.pc2]
+  ]);
+  // Petal underside (slightly darker)
+  mkRG('pu'+fi,{cx:'70%',cy:'75%',r:'75%'},[
+    ['0%',f.pc],['100%',f.pc2]
+  ]);
+  // Center disc
+  mkRG('cg'+fi,{cx:'38%',cy:'32%',r:'65%'},[
+    ['0%','#fffde7'],['42%',f.cc],['100%','#92400e']
+  ]);
+  // Stem (vertical, dark at root, bright mid, slightly lighter tip)
+  mkLG('sg'+fi,'0','0','0','1',[
+    ['0%','hsl('+f.lh+',42%,10%)'],
+    ['35%','hsl('+f.lh+',55%,26%)'],
+    ['100%','hsl('+f.lh+',60%,40%)']
+  ]);
+  // Leaf
+  mkLG('lg'+fi,'0','0','1','0',[
+    ['0%','hsl('+f.lh+',60%,48%)'],
+    ['55%','hsl('+f.lh+',52%,30%)'],
+    ['100%','hsl('+f.lh+',44%,16%)']
+  ]);
+  // Sepal
+  mkLG('sep'+fi,'0','0','1','1',[
+    ['0%','hsl('+f.lh+',55%,32%)'],
+    ['100%','hsl('+f.lh+',42%,18%)']
+  ]);
 
-  var ks=document.createElement('style');
-  ks.textContent=
-    '@keyframes sw'+fi+'{0%,100%{transform:rotate(0deg)}32%{transform:rotate('+amp+'deg)}68%{transform:rotate(-'+amp+'deg)}}'+
-    '@keyframes bl'+fi+'{from{transform:scale(0) rotate(-12deg);opacity:0}to{transform:scale(1) rotate(0deg);opacity:1}}'+
-    '@keyframes hf'+fi+'{0%,100%{transform:translateY(-28px) scale(1)}50%{transform:translateY(-40px) scale(1.15)}}';
-  document.head.appendChild(ks);
+  // ── Geometry ────────────────────────────────────────────────────────────
+  var tipX=f.x+f.lean, tipY=f.by-f.h;
+  var midY=(f.by+tipY)/2;
+  // Stem bezier control points — natural S-curve
+  var cp1x=f.x+f.lean*.15, cp1y=midY+50;
+  var cp2x=f.x+f.lean*.72, cp2y=midY-35;
+  var stemD='M '+f.x+' '+f.by+' C '+cp1x+' '+cp1y+','+cp2x+' '+cp2y+','+tipX+' '+tipY;
 
-  var g=se('g');
-  g.style.cssText='transform-origin:'+f.x+'px '+f.by+'px;animation:sw'+fi+' '+dur+'s ease-in-out infinite '+f.sd+'s';
-  document.getElementById('g-flowers').appendChild(g);
+  // Measure stem length for dash animation
+  var sl=bezLen(f.x,f.by,cp1x,cp1y,cp2x,cp2y,tipX,tipY);
 
-  // stem (3 layers)
-  [['rgba(0,0,0,.22)',6*f.sc],['url(#sg'+fi+')',3.4*f.sc],['rgba(255,255,255,.06)',1.1*f.sc]].forEach(function(s){
-    var p=se('path');sa(p,{d:sD,fill:'none',stroke:s[0],'stroke-width':s[1],'stroke-linecap':'round'});g.appendChild(p);
+  // ── Timing ──────────────────────────────────────────────────────────────
+  var T=f.sd*.22;          // per-flower start offset
+  var stemT=1.0;           // stem draw duration
+  var leafT=T+stemT*.35;   // leaves start mid-stem
+  var headT=T+stemT*.88;   // head appears as stem finishes
+  var swayT=T+stemT+1.0;   // sway starts after fully settled
+  var swayDur=3.6+f.sd*.5;
+  var swayAmp=(4.5+Math.abs(f.lean)*.14).toFixed(1)+'deg';
+
+  // ── Root group — carries idle sway after grow ────────────────────────
+  var root=se('g');
+  root.style.cssText='transform-origin:'+f.x+'px '+f.by+'px;--sa:'+swayAmp+';animation:sway '+swayDur+'s ease-in-out infinite '+swayT+'s';
+  document.getElementById('g-flowers').appendChild(root);
+
+  // ── STEM — 3 layers for depth ────────────────────────────────────────
+  // Layer 1: shadow behind
+  [
+    {stroke:'rgba(0,0,0,.28)', sw:7.5*S},
+    {stroke:'url(#sg'+fi+')',  sw:4.2*S},
+    {stroke:'rgba(255,255,255,.07)', sw:1.4*S},
+  ].forEach(function(sl2,si2){
+    var sp=se('path');
+    sa(sp,{d:stemD,fill:'none',stroke:sl2.stroke,'stroke-width':sl2.sw,
+      'stroke-linecap':'round','stroke-dasharray':sl,'stroke-dashoffset':sl});
+    sp.style.cssText='--sl:'+sl+'px;animation:stemDraw '+stemT+'s cubic-bezier(.2,0,.2,1) forwards '+(T+si2*.05)+'s';
+    root.appendChild(sp);
   });
 
-  // thorns
-  [[.28,f.lean>0?-9:9,f.lean>0?-1:1],[.5,f.lean>0?7:-7,f.lean>0?1:-1],[.68,f.lean>0?-8:8,f.lean>0?-1:1]].forEach(function(t){
-    var tx2=f.x+f.lean*t[0]+t[2]*2,ty2=f.by-f.h*t[0];
-    var tp=se('path');
-    sa(tp,{d:'M '+tx2+' '+ty2+' L '+(tx2+t[2]*Math.abs(t[1]))+' '+(ty2+Math.abs(t[1])*.5),
-      fill:'none',stroke:'hsl('+f.lh+',32%,26%)','stroke-width':'1.4','stroke-linecap':'round',opacity:'.65'});
-    g.appendChild(tp);
-  });
-
-  // leaves + veins
-  [[.28,-55,38*f.sc,10*f.sc],[.52,132,32*f.sc,8.5*f.sc],[.4,-28,24*f.sc,6.5*f.sc]].forEach(function(lc){
-    var t=lc[0],ang=lc[1],len=lc[2],w=lc[3];
-    var lx=f.x+f.lean*t,ly=f.by-f.h*t;
-    var lp=se('path');sa(lp,{d:leafD(lx,ly,ang,len,w),fill:'url(#lg'+fi+')',stroke:'rgba(0,45,0,.22)','stroke-width':'.6',opacity:'.9'});g.appendChild(lp);
-    var vr=ang*Math.PI/180;
-    var vn=se('path');
-    sa(vn,{d:'M '+lx+' '+ly+' Q '+(lx+Math.cos(vr)*len*.48+(-Math.sin(vr)*w*.18))+' '+(ly+Math.sin(vr)*len*.48+(Math.cos(vr)*w*.18))+' '+(lx+Math.cos(vr)*len*.84)+' '+(ly+Math.sin(vr)*len*.84),
-      fill:'none',stroke:'rgba(255,255,255,.12)','stroke-width':'.55'});g.appendChild(vn);
-    [.35,.65].forEach(function(vt){
-      var vx=lx+Math.cos(vr)*len*vt,vy=ly+Math.sin(vr)*len*vt;
-      var sv=se('path');
-      sa(sv,{d:'M '+vx+' '+vy+' L '+(vx+Math.cos((ang+50)*Math.PI/180)*w*.7)+' '+(vy+Math.sin((ang+50)*Math.PI/180)*w*.7),
-        fill:'none',stroke:'rgba(255,255,255,.07)','stroke-width':'.4'});g.appendChild(sv);
+  // ── THORNS — realistic, on bezier points ────────────────────────────
+  [[.28,.48,.66]].forEach(function(tArr){
+    tArr.forEach(function(t_,ti2){
+      var pt=ptOnBez(f.x,f.by,cp1x,cp1y,cp2x,cp2y,tipX,tipY,t_);
+      // tangent direction
+      var pt2=ptOnBez(f.x,f.by,cp1x,cp1y,cp2x,cp2y,tipX,tipY,t_+.01);
+      var tdx=pt2.x-pt.x, tdy=pt2.y-pt.y;
+      var tn=Math.sqrt(tdx*tdx+tdy*tdy);
+      // perpendicular
+      var side=(ti2%2===0)?1:-1;
+      var nx=(-tdy/tn)*side, ny=(tdx/tn)*side;
+      var tLen=8*S;
+      var thorn=se('path');
+      sa(thorn,{d:'M '+pt.x+' '+pt.y+' Q '+(pt.x+nx*tLen*.6+tdx/tn*tLen*.4)+' '+(pt.y+ny*tLen*.6+tdy/tn*tLen*.4)+' '+(pt.x+nx*tLen)+' '+(pt.y+ny*tLen),
+        fill:'none',stroke:'hsl('+f.lh+',30%,22%)','stroke-width':1.8*S,'stroke-linecap':'round',opacity:0});
+      thorn.style.cssText='animation:headPop .35s ease forwards '+(T+stemT*t_+.04)+'s';
+      root.appendChild(thorn);
     });
   });
 
-  // flower head
-  var head=se('g');
-  head.style.cssText='transform-origin:'+tipX+'px '+tipY+'px;animation:bl'+fi+' 1.1s cubic-bezier(.34,1.8,.64,1) both '+(0.2+fi*.22)+'s';
-  g.appendChild(head);
+  // ── LEAVES — 3 leaves, each unfurls from its stem point ─────────────
+  var leafDefs=[
+    {t:.30, ang:-58, len:52*S, wid:14*S},
+    {t:.52, ang:136, len:46*S, wid:12*S},
+    {t:.41, ang:-30, len:36*S, wid:10*S},
+  ];
+  leafDefs.forEach(function(ld,li){
+    var pt=ptOnBez(f.x,f.by,cp1x,cp1y,cp2x,cp2y,tipX,tipY,ld.t);
+    var vr=rad(ld.ang);
+    var delay=leafT+ld.t*stemT*.8+li*.15;
 
-  // shadow + glows
-  var sh=se('ellipse');sa(sh,{cx:tipX+droop*.25,cy:tipY+16,rx:22*f.sc,ry:6.5*f.sc,fill:'rgba(0,0,0,0.2)',filter:'url(#fglow)'});head.appendChild(sh);
-  [[.042,64],[.062,48],[.09,34]].forEach(function(gl2){
-    var gc=se('circle');sa(gc,{cx:tipX,cy:tipY,r:gl2[1]*f.sc,fill:f.pc,opacity:gl2[0],filter:'url(#fglow)'});head.appendChild(gc);
+    // Leaf body
+    var lp=se('path');
+    sa(lp,{d:leafPath(pt.x,pt.y,ld.ang,ld.len,ld.wid,.5),
+      fill:'url(#lg'+fi+')',stroke:'rgba(0,50,0,.18)','stroke-width':.7,opacity:0});
+    lp.style.cssText='transform-origin:'+pt.x+'px '+pt.y+'px;animation:leafOpen .75s cubic-bezier(.34,1.5,.64,1) forwards '+delay+'s';
+    root.appendChild(lp);
+
+    // Main vein
+    var vn=se('path');
+    sa(vn,{d:'M '+pt.x+' '+pt.y+' Q '+(pt.x+Math.cos(vr)*ld.len*.5+(-Math.sin(vr)*ld.wid*.22))+' '+(pt.y+Math.sin(vr)*ld.len*.5+(Math.cos(vr)*ld.wid*.22))+' '+(pt.x+Math.cos(vr)*ld.len*.88)+' '+(pt.y+Math.sin(vr)*ld.len*.88),
+      fill:'none',stroke:'rgba(255,255,255,.14)','stroke-width':.7,opacity:0});
+    vn.style.cssText='animation:headPop .4s ease forwards '+(delay+.2)+'s';
+    root.appendChild(vn);
+
+    // Side veins (3 pairs)
+    [.28,.52,.72].forEach(function(vt){
+      var vx=pt.x+Math.cos(vr)*ld.len*vt, vy=pt.y+Math.sin(vr)*ld.len*vt;
+      [-1,1].forEach(function(side2){
+        var sva=ld.ang+side2*52;
+        var sv=se('path');
+        sa(sv,{d:'M '+vx+' '+vy+' L '+(vx+Math.cos(rad(sva))*ld.wid*.65)+' '+(vy+Math.sin(rad(sva))*ld.wid*.65),
+          fill:'none',stroke:'rgba(255,255,255,.07)','stroke-width':.45,opacity:0});
+        sv.style.cssText='animation:headPop .3s ease forwards '+(delay+.3+vt*.1)+'s';
+        root.appendChild(sv);
+      });
+    });
   });
 
-  if(f.type==='rose'){
-    var gN=f.pN;
-    for(var i=0;i<gN;i++){
-      var ang=(360/gN)*i-90,rx=12+Math.sin(i*2)*4,ry=32+Math.cos(i*1.5)*9;
-      var p2=se('path');sa(p2,{d:petalD(tipX,tipY,rx*f.sc,ry*f.sc,ang,droop,i%2?1.2:-1,.08),fill:'url(#pg'+fi+')',stroke:f.pc2,'stroke-width':'.5',opacity:'.9'});head.appendChild(p2);
-    }
-    for(var i=0;i<gN;i++){
-      var ang2=(360/gN)*i-90+22;
-      var rp=se('path');sa(rp,{d:rosePetalD(tipX,tipY,9*f.sc,22*f.sc,ang2,droop*.5),fill:'url(#pg2'+fi+')',opacity:'.58'});head.appendChild(rp);
-    }
-    for(var i=0;i<gN;i++){
-      var angI=(360/gN)*i-90+44;
-      var ip=se('path');sa(ip,{d:petalD(tipX,tipY,5*f.sc,12*f.sc,angI,0,0,0),fill:f.pc2,opacity:'.38'});head.appendChild(ip);
-    }
-  } else {
+  // ── SEPALS — green pointed petals at flower base ─────────────────────
+  var sepalCount=(f.type==='tulip')?5:4;
+  var sepalLen=22*S, sepalWid=6*S;
+  var sepalGroup=se('g');
+  sepalGroup.style.cssText='opacity:0;animation:headPop .5s ease forwards '+(headT-.1)+'s';
+  for(var i=0;i<sepalCount;i++){
+    var sang=(360/sepalCount)*i-90;
+    var sep2=se('path');
+    sa(sep2,{d:petalPath(tipX,tipY+2,sepalWid,sepalLen,sang,.3,.1,.1),
+      fill:'url(#sep'+fi+')','stroke-width':0,opacity:.9});
+    sepalGroup.appendChild(sep2);
+  }
+  root.appendChild(sepalGroup);
+
+  // ── FLOWER HEAD ──────────────────────────────────────────────────────
+  var head=se('g');
+  head.style.cssText='transform-origin:'+tipX+'px '+tipY+'px;opacity:0;animation:headPop .7s cubic-bezier(.34,1.6,.64,1) forwards '+headT+'s';
+  root.appendChild(head);
+
+  // Drop shadow beneath head
+  var sh=se('ellipse');
+  sa(sh,{cx:tipX+f.lean*.2,cy:tipY+20,rx:30*S,ry:8*S,fill:'rgba(0,0,0,.16)',filter:'url(#fglow)'});
+  head.appendChild(sh);
+
+  // Ambient glow (3 halos, decreasing radius)
+  [[.038,80],[.058,60],[.088,42]].forEach(function(gl){
+    var gc=se('circle');sa(gc,{cx:tipX,cy:tipY,r:gl[1]*S,fill:f.pc,opacity:gl[0],filter:'url(#fglow)'});head.appendChild(gc);
+  });
+
+  // ── PETAL LAYERS ─────────────────────────────────────────────────────
+  if(f.type==='daisy'){
+    // Daisy: long thin petals radiating from center, 2 rings
+    var outerLen=52*S, outerWid=9*S;
+    var innerLen=40*S, innerWid=7*S;
+
+    // Outer ring — primary petals
     for(var i=0;i<f.pN;i++){
-      var ang=(360/f.pN)*i-90,rx=11+Math.sin(i*1.9)*4.5,ry=30+Math.cos(i*1.4)*9+Math.sin(i*.8)*3;
-      var cp=se('path');sa(cp,{d:petalD(tipX,tipY,rx*f.sc,ry*f.sc,ang,droop,i%2?1.4:-1.1,.06),fill:'url(#pg'+fi+')',stroke:f.pc2,'stroke-width':'.5',opacity:'.92'});head.appendChild(cp);
+      var ang=(360/f.pN)*i-90;
+      // Slight length variation for natural look
+      var lVar=1+Math.sin(i*1.7)*.1;
+      var wVar=1+Math.cos(i*2.3)*.08;
+      var op=se('path');
+      sa(op,{d:petalPath(tipX,tipY,outerWid*wVar,outerLen*lVar,ang,.25,
+          i%3===0?.15:.05, i%3===1?.12:.04),
+        fill:'url(#pg'+fi+')',stroke:f.pc2,'stroke-width':.6,opacity:0});
+      op.style.cssText='transform-origin:'+tipX+'px '+tipY+'px;animation:petalOpen .5s cubic-bezier(.34,1.6,.64,1) forwards '+(headT+.06+i*(0.045))+'s';
+      head.appendChild(op);
     }
+    // Inner ring — shorter, offset by half step
     for(var i=0;i<f.pN;i++){
       var ang2=(360/f.pN)*i-90+180/f.pN;
-      var mp=se('path');sa(mp,{d:petalD(tipX,tipY,(8+Math.sin(i)*2)*f.sc,(20+Math.cos(i)*4)*f.sc,ang2,droop*.55,0,0),fill:'url(#pg2'+fi+')',opacity:'.5'});head.appendChild(mp);
+      var ip=se('path');
+      sa(ip,{d:petalPath(tipX,tipY,innerWid*.82,innerLen*.78,ang2,.3,.06,.04),
+        fill:'url(#pu'+fi+')',opacity:0});
+      ip.style.cssText='transform-origin:'+tipX+'px '+tipY+'px;animation:petalOpen .45s cubic-bezier(.34,1.5,.64,1) forwards '+(headT+.22+i*.04)+'s';
+      head.appendChild(ip);
     }
-    for(var i=0;i<f.pN;i++){
-      var angI=(360/f.pN)*i-90+90/f.pN;
-      var ip=se('path');sa(ip,{d:petalD(tipX,tipY,5*f.sc,11*f.sc,angI,0,0,0),fill:f.pc2,opacity:'.3'});head.appendChild(ip);
+
+  } else if(f.type==='rose'){
+    // Rose: tightly spiraled cupped petals — 4 rings getting smaller inward
+    var rRings=[
+      {n:f.pN,   len:50*S, wid:18*S, roll:.45, offset:0  },
+      {n:f.pN,   len:40*S, wid:15*S, roll:.55, offset:20 },
+      {n:f.pN-1, len:30*S, wid:12*S, roll:.65, offset:40 },
+      {n:f.pN-2, len:20*S, wid:9*S,  roll:.75, offset:55 },
+    ];
+    rRings.forEach(function(ring,ri){
+      for(var i=0;i<ring.n;i++){
+        var ang=(360/ring.n)*i-90+ring.offset;
+        var rp=se('path');
+        sa(rp,{d:rosePetal(tipX,tipY,ring.wid,ring.len,ang,ring.roll),
+          fill:'url(#pg'+fi+')',stroke:f.pc2,'stroke-width':.5,opacity:0});
+        rp.style.cssText='transform-origin:'+tipX+'px '+tipY+'px;animation:petalOpen '+(0.5-.04*ri)+'s cubic-bezier(.34,1.5,.64,1) forwards '+(headT+.05+ri*.18+i*.05)+'s';
+        head.appendChild(rp);
+      }
+    });
+
+  } else if(f.type==='tulip'){
+    // Tulip: 6 large cupped petals, 2 whorls of 3
+    // Outer whorl — 3 petals, wide & cupped
+    var tLen=68*S, tWid=22*S;
+    for(var i=0;i<3;i++){
+      var ang=(360/3)*i-90;
+      var tp2=se('path');
+      // tulip petal has strong upward cup — sides fold forward
+      sa(tp2,{d:rosePetal(tipX,tipY,tWid,tLen,ang,.7),
+        fill:'url(#pg'+fi+')',stroke:f.pc2,'stroke-width':.6,opacity:0});
+      tp2.style.cssText='transform-origin:'+tipX+'px '+tipY+'px;animation:petalOpen .6s cubic-bezier(.34,1.7,.64,1) forwards '+(headT+.04+i*.08)+'s';
+      head.appendChild(tp2);
+    }
+    // Inner whorl — 3 petals offset 60°, slightly narrower
+    for(var i=0;i<3;i++){
+      var ang2=(360/3)*i-90+60;
+      var tp3=se('path');
+      sa(tp3,{d:rosePetal(tipX,tipY,tWid*.88,tLen*.92,ang2,.62),
+        fill:'url(#pu'+fi+')',opacity:0});
+      tp3.style.cssText='transform-origin:'+tipX+'px '+tipY+'px;animation:petalOpen .55s cubic-bezier(.34,1.65,.64,1) forwards '+(headT+.18+i*.07)+'s';
+      head.appendChild(tp3);
+    }
+    // Petal edge highlight lines (tulip veins run to tip)
+    for(var i=0;i<6;i++){
+      var va=(360/6)*i-90;
+      var vlen=tLen*.72;
+      var vx2=tipX+Math.cos(rad(va))*vlen, vy2=tipY+Math.sin(rad(va))*vlen;
+      var vl=se('line');
+      sa(vl,{x1:tipX,y1:tipY,x2:vx2,y2:vy2,
+        stroke:'rgba(255,255,255,.1)','stroke-width':.8,opacity:0});
+      vl.style.cssText='animation:headPop .4s ease forwards '+(headT+.32+i*.04)+'s';
+      head.appendChild(vl);
     }
   }
 
-  // shimmer
-  var shim=se('circle');sa(shim,{cx:tipX-4*f.sc,cy:tipY-4*f.sc,r:18*f.sc,fill:'url(#pg3'+fi+')',opacity:'.4'});head.appendChild(shim);
+  // ── CENTER DISC ───────────────────────────────────────────────────────
+  var discR=(f.type==='daisy')?18*S:14*S;
+  // Outer ring (slightly darker rim)
+  var discRim=se('circle');
+  sa(discRim,{cx:tipX,cy:tipY,r:discR+2.5*S,fill:f.cc,opacity:.5});
+  head.appendChild(discRim);
+  // Main disc
+  var disc=se('circle');
+  sa(disc,{cx:tipX,cy:tipY,r:discR,fill:'url(#cg'+fi+')'});
+  head.appendChild(disc);
 
-  // center disc + stamens + pollen + core
-  var disc=se('circle');sa(disc,{cx:tipX,cy:tipY,r:14*f.sc,fill:'url(#cg'+fi+')'});head.appendChild(disc);
-  for(var i=0;i<14;i++){
-    var sa2=i/14*Math.PI*2;
-    var sr=se('line');sa(sr,{x1:tipX+Math.cos(sa2)*5.5*f.sc,y1:tipY+Math.sin(sa2)*5.5*f.sc,x2:tipX+Math.cos(sa2)*13*f.sc,y2:tipY+Math.sin(sa2)*13*f.sc,stroke:'rgba(140,80,0,.4)','stroke-width':'.8'});head.appendChild(sr);
-    var sb=se('circle');sa(sb,{cx:tipX+Math.cos(sa2)*13.5*f.sc,cy:tipY+Math.sin(sa2)*13.5*f.sc,r:1.3*f.sc,fill:'rgba(251,191,36,.72)'});head.appendChild(sb);
+  // Stamens (filaments + anther tips, 16 for daisy, 12 for rose/tulip)
+  var stamN=(f.type==='daisy')?16:12;
+  var stamInner=discR*.38, stamOuter=discR*.9;
+  for(var i=0;i<stamN;i++){
+    var sa4=i/stamN*Math.PI*2;
+    // Filament
+    var fil=se('line');
+    sa(fil,{x1:tipX+Math.cos(sa4)*stamInner*S,y1:tipY+Math.sin(sa4)*stamInner*S,
+      x2:tipX+Math.cos(sa4)*stamOuter*S,y2:tipY+Math.sin(sa4)*stamOuter*S,
+      stroke:'rgba(120,65,0,.5)','stroke-width':.9});
+    head.appendChild(fil);
+    // Anther (teardrop shape aligned to filament direction)
+    var ax=tipX+Math.cos(sa4)*(stamOuter+2.2)*S;
+    var ay=tipY+Math.sin(sa4)*(stamOuter+2.2)*S;
+    var ant=se('ellipse');
+    sa(ant,{cx:ax,cy:ay,rx:1.8*S,ry:1.2*S,
+      transform:'rotate('+(i/stamN*360)+','+ax+','+ay+')',
+      fill:'rgba(245,180,30,.82)'});
+    head.appendChild(ant);
   }
-  for(var i=0;i<12;i++){
-    var da=i/12*Math.PI*2;
-    var dd=se('circle');sa(dd,{cx:tipX+Math.cos(da)*5.8*f.sc,cy:tipY+Math.sin(da)*5.8*f.sc,r:1.3*f.sc,fill:'rgba(255,235,70,.5)'});head.appendChild(dd);
+  // Pollen dots
+  for(var i=0;i<18;i++){
+    var pa=i/18*Math.PI*2;
+    var pr=discR*.52*S;
+    var pd2=se('circle');
+    sa(pd2,{cx:tipX+Math.cos(pa)*pr,cy:tipY+Math.sin(pa)*pr,r:1.5*S,fill:'rgba(255,228,50,.6)'});
+    head.appendChild(pd2);
   }
-  var core=se('circle');sa(core,{cx:tipX,cy:tipY,r:5*f.sc,fill:'rgba(255,252,195,.94)'});head.appendChild(core);
-  var shine=se('circle');sa(shine,{cx:tipX-1.5*f.sc,cy:tipY-1.5*f.sc,r:2*f.sc,fill:'rgba(255,255,255,.55)'});head.appendChild(shine);
+  // Pistil (central dome)
+  var pist=se('circle');sa(pist,{cx:tipX,cy:tipY,r:6*S,fill:'rgba(255,252,195,.96)'});head.appendChild(pist);
+  var pistShine=se('ellipse');
+  sa(pistShine,{cx:tipX-2*S,cy:tipY-2*S,rx:3*S,ry:2*S,fill:'rgba(255,255,255,.65)',transform:'rotate(-35,'+tipX+','+tipY+')'});
+  head.appendChild(pistShine);
+  // Stigma tips (3 lobes)
+  for(var i=0;i<3;i++){
+    var sta=i/3*Math.PI*2-Math.PI/6;
+    var stx=tipX+Math.cos(sta)*4*S, sty=tipY+Math.sin(sta)*4*S;
+    var stigma=se('circle');sa(stigma,{cx:stx,cy:sty,r:1.6*S,fill:'rgba(255,255,180,.9)'});head.appendChild(stigma);
+  }
 
-  // floating heart above each flower
+  // ── FLOATING HEART ───────────────────────────────────────────────────
   var hg=se('g');
-  hg.style.cssText='animation:hf'+fi+' '+(2.4+fi*.32)+'s ease-in-out infinite '+(fi*.28)+'s';
-  var hp=se('path');sa(hp,{d:svgHrtD(tipX,tipY,9*f.sc),fill:f.pc,opacity:'.52',filter:'url(#fglow)'});hg.appendChild(hp);
-  var hp2=se('path');sa(hp2,{d:svgHrtD(tipX-f.sc,tipY-f.sc,4.5*f.sc),fill:'rgba(255,255,255,.48)',opacity:'.38'});hg.appendChild(hp2);
+  var hgDelay=headT+1.2;
+  var hgDur=(2.5+fi*.38).toFixed(2);
+  hg.style.cssText='opacity:0;animation:headPop .5s ease forwards '+hgDelay+'s, heartPulse '+hgDur+'s ease-in-out infinite '+(hgDelay+.6)+'s';
+  var hp=se('path');sa(hp,{d:heartPath(tipX,tipY,10*S),fill:f.pc,opacity:.55,filter:'url(#fglow)'});hg.appendChild(hp);
+  var hp2=se('path');sa(hp2,{d:heartPath(tipX-S,tipY-S,5*S),fill:'rgba(255,255,255,.5)',opacity:.4});hg.appendChild(hp2);
   head.appendChild(hg);
 });
 
